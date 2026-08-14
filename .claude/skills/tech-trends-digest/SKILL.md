@@ -21,6 +21,8 @@ Produces one day's Digest for the Tech Trend Assistant. See `CONTEXT.md` at the 
    ```
    This prints a JSON list of candidate Trend Items, each already keyword-pre-filtered against the fixed Topic list and tagged with every Topic its keywords matched (`candidate_topics`). This is broad-recall pre-filtering, not the final classification — some candidates will list more than one Topic, and some keyword matches will be wrong (e.g. a title matching "startup" as in "faster startup" rather than a business startup).
 
+   **Sandbox network-policy fallback.** If this fails specifically because the environment's network egress policy blocks the request to `hn.algolia.com` (a proxy/CONNECT-layer 403 — check for this explicitly, don't assume) rather than a real source failure: use `WebFetch` on `https://hn.algolia.com/api/v1/search?tags=front_page` with a prompt asking for the raw JSON verbatim, save that response to a file as `{"hits": [...]}`, then re-run with `.venv/bin/python -m news_assistant.cli --from-json <path>` instead. This is narrowly for the network-policy case — any other fetch failure (timeout, 5xx, malformed response) still fails loudly per "Out of scope" below; don't reach for this fallback there.
+
 3. **Classify.** For each candidate, decide the single best-fitting Topic from the fixed six (AI/LLMs, DevOps, IT Industry trends, SRE, Systems, Python) using your own judgment, not just `candidate_topics`. Drop any candidate that doesn't genuinely belong to one of the six Topics, even if the keyword pre-filter flagged it.
 
 4. **Summarize.** Write a 1–2 sentence summary of each retained candidate, suitable for a busy reader deciding whether to click through.

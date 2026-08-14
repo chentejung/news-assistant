@@ -1,4 +1,4 @@
-from news_assistant.sources.hackernews import fetch_hackernews
+from news_assistant.sources.hackernews import fetch_hackernews, parse_front_page
 
 
 class _FakeResponse:
@@ -58,5 +58,44 @@ def test_fetch_hackernews_skips_hits_without_a_title():
     session = _FakeSession(payload)
 
     items = fetch_hackernews(session=session)
+
+    assert items == []
+
+
+def test_parse_front_page_maps_hits_to_raw_items():
+    payload = {
+        "hits": [
+            {
+                "objectID": "111",
+                "title": "New Python release ships faster startup",
+                "url": "https://python.org/news",
+                "points": 42,
+            }
+        ]
+    }
+
+    items = parse_front_page(payload)
+
+    assert len(items) == 1
+    item = items[0]
+    assert item.id == "hn:111"
+    assert item.title == "New Python release ships faster startup"
+    assert item.url == "https://python.org/news"
+    assert item.source == "Hacker News"
+    assert item.points == 42
+
+
+def test_parse_front_page_falls_back_to_hn_discussion_url_when_no_external_url():
+    payload = {"hits": [{"objectID": "222", "title": "Ask HN: best SRE books?", "points": 7}]}
+
+    items = parse_front_page(payload)
+
+    assert items[0].url == "https://news.ycombinator.com/item?id=222"
+
+
+def test_parse_front_page_skips_hits_without_a_title():
+    payload = {"hits": [{"objectID": "333", "points": 1}]}
+
+    items = parse_front_page(payload)
 
     assert items == []
