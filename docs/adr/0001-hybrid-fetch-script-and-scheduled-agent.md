@@ -1,0 +1,5 @@
+# Hybrid architecture: standalone fetch script + Claude Code scheduled agent
+
+We need a daily Scheduled Run that fetches, classifies, and summarizes Trend Items, plus an On-Demand Run for ad-hoc queries. We considered a fully standalone Python script (calling the Anthropic API directly for summarization, triggered by OS-level cron) versus a fully Claude-Code-native scheduled agent (fetch and summarize entirely inside the agent run). We chose a hybrid: fetching and keyword pre-filtering live in a standalone, independently runnable and testable script; scheduling, final Topic classification, and summarization are handled by a Claude Code scheduled agent that invokes the script.
+
+This avoids provisioning and billing a separate LLM API key (the fully-standalone option), while keeping the fetch logic portable and testable rather than trapped inside agent-only code (the fully-native option). The trade-off: the digest-generation pipeline now depends on Claude Code's scheduling infrastructure being available, not just on Python + cron.
