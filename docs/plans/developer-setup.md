@@ -49,7 +49,7 @@ We use SMTP + an App Password instead of the Gmail API specifically because the 
 Per `vercel-fetch-migration.md` Phase 3:
 
 - [ ] Manually invoke the deployed function's URL once — confirm it writes to Drive and calls the trigger.
-- [ ] POST a synthetic `{"status": "failure", "error": "test"}` body to the routine's API trigger directly — confirm it emails a failure notice and makes no git commit.
+- [ ] `POST` `{"text": "Fetch failed: test"}` to the routine's `/fire` URL directly (with the `Authorization`, `anthropic-beta: experimental-cc-routine-2026-04-01`, and `anthropic-version: 2023-06-01` headers `trigger.py` sends) — confirm it emails a failure notice and makes no git commit.
 - [ ] Let one real scheduled run happen; confirm the digest, the git commit, and the success email all show up.
 
 Once that passes, close out issue #2's blocked status.
@@ -69,6 +69,9 @@ Exactly `https://developers.google.com/oauthplayground`, and only for the one-ti
 
 **The access token in the token-exchange response expires — is that a problem?**
 No. Only the refresh token needs saving. `GoogleDriveClient` and `scripts/create_drive_file.py` both mint a fresh access token from the refresh token on every call; nothing caches or reuses the short-lived one.
+
+**Why did the deployed function fail with `400 Bad Request` calling the routine's `/fire` URL?**
+The original design assumed `/fire` accepted a structured `{"status": ..., "error": ...}` JSON body — it doesn't. The endpoint's only field is freeform `text`, and it also requires two headers beyond `Authorization` that weren't being sent: `anthropic-beta: experimental-cc-routine-2026-04-01` and `anthropic-version: 2023-06-01`. `trigger.py` now sends both headers and encodes status as one of two plain sentences (`"Fetch succeeded."` / `"Fetch failed: <error>"`) instead of JSON fields — the skill's prompt reads that sentence directly rather than parsing a payload.
 
 **Why did `scripts/create_drive_file.py` fail with `403 Forbidden`?**
 Two likely causes, both now covered in `google-oauth-setup.md` step 1: the Google Drive API wasn't enabled on the Cloud project, or `drive.file` wasn't declared on the OAuth consent screen's Data Access scopes (requesting a scope at authorization time isn't the same as declaring it on the consent screen).

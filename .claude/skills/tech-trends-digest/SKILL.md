@@ -15,13 +15,15 @@ Produces one day's Digest for the Tech Trend Assistant. See `CONTEXT.md` at the 
    .venv/bin/pip install -e .
    ```
 
-2. **Read the incoming trigger payload.** The API trigger that started this run carries `{"status": "success"}` or `{"status": "failure", "error": "..."}`.
+2. **Read this run's starting context.** The API trigger's `/fire` call has no structured payload — it only supports a single freeform `text` field, injected as this run's initial context alongside this prompt (not JSON, not a schema Vercel and this skill both parse). `news_assistant.trigger.RoutineTrigger` sends exactly one of two sentences:
+   - `Fetch failed: <error message>`
+   - `Fetch succeeded.`
 
-   - **On failure:** send the failure-notice email and stop — do not write or commit anything, since a failed fetch has no candidates and nothing fits the Digest definition:
+   **If the starting context begins with "Fetch failed:"** — send the failure-notice email and stop. Do not write or commit anything, since a failed fetch has no candidates and nothing fits the Digest definition:
      ```
-     echo "<the error text>" | .venv/bin/python -m news_assistant.notify_cli --subject "Tech Trends Digest: fetch failed for <YYYY-MM-DD>"
+     echo "<the error text after 'Fetch failed:'>" | .venv/bin/python -m news_assistant.notify_cli --subject "Tech Trends Digest: fetch failed for <YYYY-MM-DD>"
      ```
-   - **On success:** continue to step 3.
+   **Otherwise** (starting context is "Fetch succeeded." or this run wasn't started via the API trigger at all, e.g. an on-demand invocation) — continue to step 3.
 
 3. **Read the Fetch Payload.** Using the Google Drive MCP connector, read the single well-known Fetch Payload file Vercel just wrote. It's a JSON list of candidate Trend Items, each already keyword-pre-filtered against the fixed Topic list and tagged with every Topic its keywords matched (`candidate_topics`). This is broad-recall pre-filtering, not the final classification — some candidates will list more than one Topic, and some keyword matches will be wrong (e.g. a title matching "startup" as in "faster startup" rather than a business startup).
 
