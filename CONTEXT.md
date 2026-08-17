@@ -8,6 +8,10 @@ Produces a daily, topic-curated digest of tech-industry trends from a fixed set 
 One of the fixed subject areas the user tracks (AI/LLMs, DevOps, IT Industry trends, SRE, Systems, Python). A Trend Item must match exactly one Topic to appear in the Digest; items matching none are excluded.
 _Avoid_: Category, tag.
 
+**Fetch Payload**:
+The pre-filtered candidate data that Vercel's scheduled fetch job writes to Google Drive for the Scheduled Run to read: Hacker News items already keyword-matched against the fixed Topic list, but not yet classified into a single Topic or summarized.
+_Avoid_: Candidates, raw data — reserve "Fetch Payload" for this specific handoff artifact.
+
 **Trend Item**:
 A single news story, sourced from Hacker News or an RSS feed, that has been matched to a Topic and summarized for inclusion in a Digest.
 _Avoid_: Story, article, headline — those refer to unprocessed source material, not a Trend Item.
