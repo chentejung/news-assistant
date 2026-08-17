@@ -13,6 +13,7 @@ from .fetch import Candidate
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
+DOWNLOAD_URL = "https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
 
 
 class GoogleDriveClient:
@@ -34,7 +35,8 @@ class GoogleDriveClient:
             },
             timeout=10,
         )
-        response.raise_for_status()
+        if not response.ok:
+            raise RuntimeError(f"Token refresh failed ({response.status_code}): {response.text}")
         return response.json()["access_token"]
 
     def write_fetch_payload(self, candidates: list[Candidate]) -> None:
@@ -49,4 +51,21 @@ class GoogleDriveClient:
             data=body,
             timeout=10,
         )
-        response.raise_for_status()
+        if not response.ok:
+            raise RuntimeError(f"Drive write failed ({response.status_code}): {response.text}")
+
+    def read_fetch_payload(self) -> list[dict]:
+        """Reads the Fetch Payload directly via the Drive REST API, using the
+        same drive.file-scoped token the write side uses — not the claude.ai
+        Drive MCP connector, which only surfaces Google Docs/Sheets/Slides
+        and doesn't see a plain .json file (confirmed by a real routine run
+        getting zero results from both a targeted and an unfiltered search)."""
+        token = self._access_token()
+        response = self._session.get(
+            DOWNLOAD_URL.format(file_id=self._file_id),
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        if not response.ok:
+            raise RuntimeError(f"Drive read failed ({response.status_code}): {response.text}")
+        return response.json()

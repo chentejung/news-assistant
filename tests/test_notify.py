@@ -1,26 +1,43 @@
 from news_assistant.notify import send_email
 
 
-class _RecordingSMTP:
+class _FakeResponse:
+    ok = True
+
+
+class _FakeSession:
     def __init__(self):
-        self.sent = None
+        self.post_calls = []
 
-    def send_message(self, msg):
-        self.sent = msg
+    def post(self, url, headers=None, json=None, timeout=None):
+        self.post_calls.append({"url": url, "headers": headers, "json": json})
+        return _FakeResponse()
 
 
-def test_send_email_composes_and_sends_the_message():
-    smtp = _RecordingSMTP()
+def test_send_email_posts_to_resend_with_bearer_key():
+    session = _FakeSession()
 
     send_email(
         subject="Today's Digest",
         body="AI/LLMs\n- Some item",
         to="user@example.com",
         sender="bot@example.com",
-        smtp=smtp,
+        api_key="re_test_key",
+        session=session,
     )
 
-    assert smtp.sent["Subject"] == "Today's Digest"
-    assert smtp.sent["From"] == "bot@example.com"
-    assert smtp.sent["To"] == "user@example.com"
-    assert smtp.sent.get_content().strip() == "AI/LLMs\n- Some item"
+    assert session.post_calls == [
+        {
+            "url": "https://api.resend.com/emails",
+            "headers": {
+                "Authorization": "Bearer re_test_key",
+                "Content-Type": "application/json",
+            },
+            "json": {
+                "from": "bot@example.com",
+                "to": ["user@example.com"],
+                "subject": "Today's Digest",
+                "text": "AI/LLMs\n- Some item",
+            },
+        }
+    ]

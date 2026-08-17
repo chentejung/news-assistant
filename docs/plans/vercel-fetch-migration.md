@@ -40,7 +40,7 @@ news-assistant/
 3. On success: writes the result — the **Fetch Payload** — to a single well-known file in Google Drive, overwriting the previous day's (`drive.file`-scoped OAuth token, stored as a Vercel secret).
 4. Either way (success or failure): `POST`s the routine's **API trigger** (`/fire` endpoint, bearer token, plus the required `anthropic-beta`/`anthropic-version` headers). The endpoint's only body field is freeform `text`, injected as this run's starting context — not a JSON status contract — so the signal is one of two plain sentences ("Fetch succeeded." / "Fetch failed: \<error\>") that the skill's prompt is written to recognize. On failure, Drive is left untouched.
 5. The routine's own cron trigger is removed; the API trigger is the sole path in.
-6. On success: the routine reads the Fetch Payload via its Google Drive MCP connector (MCP traffic routes through Anthropic's backend, not the sandbox's network boundary, so it isn't subject to the egress block that blocked the direct fetch), classifies, summarizes, renders the Digest, commits it to git (unchanged from the original ACs), and emails the full rendered content inline via SMTP + a Gmail App Password.
+6. On success: the routine reads the Fetch Payload via the Drive REST API directly (`drive_cli.py`, same OAuth token as the write side — the Drive MCP connector turned out unable to see a plain `.json` file, it's a Docs/Sheets/Slides picker), classifies, summarizes, renders the Digest, commits it to git (unchanged from the original ACs), and emails the full rendered content inline via the Resend HTTP API (SMTP doesn't work in this sandbox — raw sockets are blocked, only HTTPS egress is permitted).
 7. On failure: no git commit — nothing fits the Digest definition — but the routine still sends a failure-notice email.
 
 ## Implementation phases
@@ -51,9 +51,9 @@ news-assistant/
 2. Google Cloud: create an OAuth client, generate a refresh token scoped to `drive.file`.
 3. Google Drive: manually create one empty file (e.g. `fetch-payload.json`) — `GoogleDriveClient.write_fetch_payload` does a `PATCH` (update), not a create, so the file must exist before the first run. Note its file ID from the Drive URL.
 4. Set these as Vercel project env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_DRIVE_FILE_ID` (from step 3), `ROUTINE_TRIGGER_URL`, `ROUTINE_TRIGGER_TOKEN` (from step 6).
-5. Gmail: enable 2-Step Verification, generate an App Password.
+5. Resend: sign up, generate an API key. No domain verification needed — `onboarding@resend.dev` works as a sender for this volume.
 6. Claude Code: add an API trigger to the existing routine (note its URL + bearer token for step 4), remove its old cron trigger, and enable/authenticate the Google Drive MCP connector on the routine (routine-level connector auth is separate from any interactive session's — this session authenticating Drive does not cover the routine).
-7. Set these as env vars in the routine's own environment (not Vercel's): `SMTP_USERNAME` (the Gmail address), `SMTP_APP_PASSWORD` (from step 5), `DIGEST_TO` (where the digest should be emailed — likely the same address). `SMTP_HOST`/`SMTP_PORT` default to `smtp.gmail.com`/`587` and don't need setting.
+7. Set these as env vars on the routine's cloud Environment (not Vercel's): `RESEND_API_KEY` (from step 5), `DIGEST_TO` (where the digest should be emailed), and the same `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REFRESH_TOKEN`/`GOOGLE_DRIVE_FILE_ID` from step 4 (the routine reads Drive directly, not via a connector). `DIGEST_FROM` defaults to `Tech Trends Digest <onboarding@resend.dev>` and doesn't need setting unless you verify your own sending domain.
 
 ### Phase 2 — Code
 

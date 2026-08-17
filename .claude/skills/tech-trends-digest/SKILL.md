@@ -25,7 +25,13 @@ Produces one day's Digest for the Tech Trend Assistant. See `CONTEXT.md` at the 
      ```
    **Otherwise** (starting context is "Fetch succeeded." or this run wasn't started via the API trigger at all, e.g. an on-demand invocation) — continue to step 3.
 
-3. **Read the Fetch Payload.** Using the Google Drive MCP connector, read the single well-known Fetch Payload file Vercel just wrote. It's a JSON list of candidate Trend Items, each already keyword-pre-filtered against the fixed Topic list and tagged with every Topic its keywords matched (`candidate_topics`). This is broad-recall pre-filtering, not the final classification — some candidates will list more than one Topic, and some keyword matches will be wrong (e.g. a title matching "startup" as in "faster startup" rather than a business startup).
+3. **Read the Fetch Payload.**
+   ```
+   .venv/bin/python -m news_assistant.drive_cli
+   ```
+   Prints the single well-known Fetch Payload file Vercel just wrote — a JSON list of candidate Trend Items, each already keyword-pre-filtered against the fixed Topic list and tagged with every Topic its keywords matched (`candidate_topics`). This is broad-recall pre-filtering, not the final classification — some candidates will list more than one Topic, and some keyword matches will be wrong (e.g. a title matching "startup" as in "faster startup" rather than a business startup).
+
+   (This reads via the Drive REST API with the same OAuth token Vercel writes with — **not** the Google Drive connector. A real run confirmed the connector's `search_files`/`list_recent_files` return zero results for this file: it's a Google Docs/Sheets/Slides picker and doesn't surface plain `.json` files.)
 
 4. **Classify.** For each candidate, decide the single best-fitting Topic from the fixed six (AI/LLMs, DevOps, IT Industry trends, SRE, Systems, Python) using your own judgment, not just `candidate_topics`. Drop any candidate that doesn't genuinely belong to one of the six Topics, even if the keyword pre-filter flagged it.
 
@@ -40,13 +46,13 @@ Produces one day's Digest for the Tech Trend Assistant. See `CONTEXT.md` at the 
 
    Save the file to `digests/<YYYY-MM-DD>.md` (create the `digests/` directory if it doesn't exist) and commit it to git with a message like `Add digest for <YYYY-MM-DD>`.
 
-8. **Email the rendered Digest** (SMTP + Gmail App Password, per ADR-0005):
+8. **Email the rendered Digest** (Resend HTTP API — SMTP doesn't work in this sandbox, confirmed by a real run failing with a raw-socket error; only HTTPS egress is permitted, per ADR-0005):
    ```
    cat digests/<YYYY-MM-DD>.md | .venv/bin/python -m news_assistant.notify_cli --subject "Tech Trends Digest: <YYYY-MM-DD>"
    ```
    (The failure case's email is sent directly from step 2 and never reaches this step.)
 
-Both email steps require `SMTP_USERNAME`, `SMTP_APP_PASSWORD`, and `DIGEST_TO` set in the routine's environment (`SMTP_HOST`/`SMTP_PORT` default to `smtp.gmail.com`/`587`).
+Both email steps require `RESEND_API_KEY` and `DIGEST_TO` set in the routine's environment (`DIGEST_FROM` defaults to `Tech Trends Digest <onboarding@resend.dev>`). Step 3 requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, and `GOOGLE_DRIVE_FILE_ID` — the same four values set on Vercel — also set on the routine's environment.
 
 ## Out of scope for this skill
 

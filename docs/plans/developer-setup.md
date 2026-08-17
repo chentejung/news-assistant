@@ -14,21 +14,21 @@ Full detail (including the exact 403 gotchas and how to recover from them) is in
 
 **Output of this step:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_DRIVE_FILE_ID`.
 
-## 2. Gmail — App Password for SMTP
+## 2. Resend — API key for email
 
-- [ ] Enable 2-Step Verification on the Gmail account that will send the digest emails.
-- [ ] Generate an App Password (Google Account → Security → 2-Step Verification → App passwords).
+- [ ] Sign up at [resend.com](https://resend.com), generate an API key.
+- [ ] No domain verification needed to start — `onboarding@resend.dev` works as a sender for testing (100 emails/day / 3,000/month free).
 
-We use SMTP + an App Password instead of the Gmail API specifically because the Gmail API's OAuth "Testing" mode issues refresh tokens that expire every 7 days for sensitive scopes like `gmail.send` — see ADR-0005.
+We use Resend's HTTP API rather than SMTP or the Gmail API: a real routine run confirmed the cloud sandbox blocks raw TCP sockets (SMTP), permitting only an HTTPS proxy path, and the Gmail API's OAuth "Testing" mode issues refresh tokens that expire every 7 days for sensitive scopes like `gmail.send` — see ADR-0005.
 
-**Output of this step:** `SMTP_APP_PASSWORD` (and the Gmail address itself, for `SMTP_USERNAME`).
+**Output of this step:** `RESEND_API_KEY`.
 
 ## 3. Claude Code — the routine's trigger and connector
 
 - [ ] Add an **API trigger** to the existing routine; note the `/fire` URL and bearer token it gives you.
 - [ ] Remove the routine's **old cron trigger** — the API trigger becomes the sole path in, so there's no double-run risk or a stale trigger retrying the now-removed direct-fetch code path.
 - [ ] Enable/authenticate the **Google Drive MCP connector** on the routine itself. This is separate from any interactive chat session's own Drive connector auth — authenticating Drive in a chat session does not cover the routine.
-- [ ] Set `SMTP_USERNAME`, `SMTP_APP_PASSWORD` (from step 2), and `DIGEST_TO` on the routine's **cloud Environment** (not a per-routine setting — [claude.ai/code](https://claude.ai/code) → cloud icon above the message box → environment selector → edit the environment this routine uses, `.env`-format vars). Anthropic's own docs state cloud environments have no dedicated secrets store — these vars are plaintext and shared across every routine using that environment. Acceptable for a scoped, revocable Gmail App Password; know this before putting anything more sensitive there.
+- [ ] Set `RESEND_API_KEY` (from step 2), `DIGEST_TO`, and `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REFRESH_TOKEN`/`GOOGLE_DRIVE_FILE_ID` (from step 1 — the routine reads the Fetch Payload via Drive REST directly, not the Drive connector) on the routine's **cloud Environment** (not a per-routine setting — [claude.ai/code](https://claude.ai/code) → cloud icon above the message box → environment selector → edit the environment this routine uses, `.env`-format vars). Anthropic's own docs state cloud environments have no dedicated secrets store — these vars are plaintext and shared across every routine using that environment. Acceptable for a scoped, revocable Resend key; know this before putting anything more sensitive there.
 
 **Output of this step:** `ROUTINE_TRIGGER_URL`, `ROUTINE_TRIGGER_TOKEN`.
 
@@ -80,13 +80,16 @@ Two likely causes, both now covered in `google-oauth-setup.md` step 1: the Googl
 No — routines don't auto-delete or auto-disable from repeated failures, only one-off runs do. It was confirmed still present (and still running the old pre-ADR-0005 config) via `RemoteTrigger`/`/schedule list`. If it's not visible in the web UI, check you're logged into the same claude.ai account that created it.
 
 **I don't see a Google Drive connector to connect.**
-It's gated to Pro/Max/Team/Enterprise plans — not visible on Free. (Resolved once on Pro.) Separately worth knowing: Anthropic's own docs describe this connector as a *document* picker (Google Docs specifically; Sheets and other types are explicitly unsupported), which doesn't obviously cover reading an arbitrary `.json` file the way the routine's step 3 needs. **Untested as of this writing** — verify it during Phase 3's first real test before trusting it; the fallback is a REST-based read in `drive.py` mirroring the already-tested `write_fetch_payload`, using the same OAuth token.
+It's gated to Pro/Max/Team/Enterprise plans — not visible on Free. (Resolved once on Pro.) Separately: a real run confirmed the connector can't actually read the Fetch Payload — Anthropic's docs describe it as a Google Docs/Sheets/Slides picker, and its `search_files`/`list_recent_files` returned zero results for the plain `.json` file. The routine now reads via `drive_cli.py` — Drive REST API, same OAuth token the write side uses — instead of the connector.
 
 **Can the Gmail connector send the email instead of SMTP?**
-No — Anthropic's docs state it explicitly: *"Claude cannot create, send, or modify emails"* via that connector. It's read/search-only. SMTP + App Password (or the Gmail API, ruled out for its 7-day token expiry) are the only actual sending paths.
+No — Anthropic's docs state it explicitly: *"Claude cannot create, send, or modify emails"* via that connector. It's read/search-only.
 
-**Where do `SMTP_USERNAME`/`SMTP_APP_PASSWORD`/`DIGEST_TO` actually get set?**
+**Why not SMTP + a Gmail App Password for sending?**
+Tried it first; a real routine run failed with `OSError: [Errno 97] Address family not supported by protocol` on a raw `socket.create_connection` to `smtp.gmail.com:587` — confirmed non-transient (DNS resolved fine, a plain socket test failed identically). The routine's cloud sandbox only permits an HTTPS proxy path, not raw TCP sockets, so SMTP can't work here regardless of credentials. Resend (plain HTTPS, static API key) replaced it.
+
+**Where do `RESEND_API_KEY`/`DIGEST_TO`/the `GOOGLE_*` vars actually get set?**
 Not on the routine itself — there's no per-routine env var field in the trigger API. They go on the routine's shared cloud **Environment** instead (see step 3 above). No dedicated secrets store exists for this yet; the vars are plaintext, shared across every routine using that environment.
 
-**What values go in `SMTP_USERNAME` and `DIGEST_TO`?**
-Both plain email addresses. `SMTP_USERNAME` is the Gmail address the App Password belongs to (also used as the `From` sender). `DIGEST_TO` is the recipient — typically the same address, unless the digest should land in a different inbox than the sending account.
+**What values go in `DIGEST_TO` (and `DIGEST_FROM`)?**
+`DIGEST_TO` is a plain email address — wherever you want the digest delivered. `DIGEST_FROM` is optional and defaults to `Tech Trends Digest <onboarding@resend.dev>`; only set it if you've verified your own sending domain with Resend.

@@ -1,13 +1,13 @@
 """CLI entry point invoked by the digest-generation skill's email step:
-sends an email via SMTP, reading the recipient and credentials from the
+sends an email via Resend, reading the recipient and credentials from the
 environment and the body from stdin. Thin and untested, same as cli.py —
-the tested core is notify.send_email/connect."""
+the tested core is notify.send_email."""
 
 import argparse
 import os
 import sys
 
-from .notify import connect, send_email
+from .notify import send_email
 
 
 def main() -> None:
@@ -16,23 +16,13 @@ def main() -> None:
     args = parser.parse_args()
 
     body = sys.stdin.read()
-    username = os.environ["SMTP_USERNAME"]
-    smtp = connect(
-        host=os.environ.get("SMTP_HOST", "smtp.gmail.com"),
-        port=int(os.environ.get("SMTP_PORT", "587")),
-        username=username,
-        app_password=os.environ["SMTP_APP_PASSWORD"],
+    send_email(
+        subject=args.subject,
+        body=body,
+        to=os.environ["DIGEST_TO"],
+        sender=os.environ.get("DIGEST_FROM", "Tech Trends Digest <onboarding@resend.dev>"),
+        api_key=os.environ["RESEND_API_KEY"],
     )
-    try:
-        send_email(
-            subject=args.subject,
-            body=body,
-            to=os.environ["DIGEST_TO"],
-            sender=username,
-            smtp=smtp,
-        )
-    finally:
-        smtp.quit()
 
 
 if __name__ == "__main__":
