@@ -19,7 +19,7 @@ news-assistant/
 ├── src/
 │   └── news_assistant/          # existing fetch + pre-filter (Python) — unchanged, single source of truth
 ├── api/
-│   └── fetch.py                 # Vercel Function entry point: imports src/news_assistant,
+│   └── index.py                 # Vercel Function entry point: imports src/news_assistant,
 │                                 #   writes Fetch Payload to Drive, POSTs the API trigger
 ├── vercel.json                  # cron schedule (~daily) + Python runtime config, root dir
 ├── requirements.txt
@@ -31,11 +31,11 @@ news-assistant/
 
 - **Vercel** connects to this GitHub repo via its own integration and only builds/deploys `api/` (plus whatever it imports from `src/news_assistant/`). Every push to `main` triggers a Production deployment automatically; Vercel Cron only fires against Production. Monorepo path-detection means a commit that only touches `digests/` or `.claude/skills/` won't trigger a rebuild.
 - **The Claude Code cloud routine** clones the repo fresh from `main` on every firing — no snapshotting, no separate deploy step. A change to `SKILL.md` takes effect on the next firing automatically. Branch is controlled by the routine's saved prompt (defaults to `main`), not a separate config field.
-- `src/news_assistant/` stays the single implementation of fetch + pre-filter; `api/fetch.py` is a thin Vercel wrapper around it, not a duplicate.
+- `src/news_assistant/` stays the single implementation of fetch + pre-filter; `api/index.py` is a thin Vercel wrapper around it, not a duplicate.
 
 ## Pipeline
 
-1. Vercel Function (`api/fetch.py`) runs on a daily Vercel Cron schedule (Hobby tier: once/day max, ±59 min precision — accepted as fine).
+1. Vercel Function (`api/index.py`) runs on a daily Vercel Cron schedule (Hobby tier: once/day max, ±59 min precision — accepted as fine).
 2. It runs the existing fetch + keyword pre-filter logic.
 3. On success: writes the result — the **Fetch Payload** — to a single well-known file in Google Drive, overwriting the previous day's (`drive.file`-scoped OAuth token, stored as a Vercel secret).
 4. Either way (success or failure): `POST`s the routine's **API trigger** (`/fire` endpoint, bearer token) with an explicit `{status: "success"|"failure", payload | error}` body — the routine never infers status from Drive file state. On failure, Drive is left untouched.
@@ -47,20 +47,23 @@ news-assistant/
 
 ### Phase 1 — External provisioning (manual, dashboard/CLI)
 
-1. Vercel: create/link a project to this repo, set Python runtime for `api/`.
-2. Google Cloud: create an OAuth client, generate a refresh token scoped to `drive.file` → Vercel env secret.
-3. Gmail: enable 2-Step Verification, generate an App Password → secret for the routine's SMTP send.
-4. Claude Code: add an API trigger to the existing routine, remove its old cron trigger, enable/authenticate the Google Drive MCP connector on the routine (routine-level connector auth is separate from any interactive session's).
+1. Vercel: create/link a project to this repo (Python runtime for `api/` is auto-detected via `requirements.txt`).
+2. Google Cloud: create an OAuth client, generate a refresh token scoped to `drive.file`.
+3. Google Drive: manually create one empty file (e.g. `fetch-payload.json`) — `GoogleDriveClient.write_fetch_payload` does a `PATCH` (update), not a create, so the file must exist before the first run. Note its file ID from the Drive URL.
+4. Set these as Vercel project env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_DRIVE_FILE_ID` (from step 3), `ROUTINE_TRIGGER_URL`, `ROUTINE_TRIGGER_TOKEN` (from step 6).
+5. Gmail: enable 2-Step Verification, generate an App Password.
+6. Claude Code: add an API trigger to the existing routine (note its URL + bearer token for step 4), remove its old cron trigger, and enable/authenticate the Google Drive MCP connector on the routine (routine-level connector auth is separate from any interactive session's — this session authenticating Drive does not cover the routine).
+7. Set these as env vars in the routine's own environment (not Vercel's): `SMTP_USERNAME` (the Gmail address), `SMTP_APP_PASSWORD` (from step 5), `DIGEST_TO` (where the digest should be emailed — likely the same address). `SMTP_HOST`/`SMTP_PORT` default to `smtp.gmail.com`/`587` and don't need setting.
 
 ### Phase 2 — Code
 
-5. `api/fetch.py`: wraps `src/news_assistant/`, writes Fetch Payload to Drive on success, POSTs the API trigger either way.
+5. `api/index.py`: wraps `src/news_assistant/`, writes Fetch Payload to Drive on success, POSTs the API trigger either way.
 6. `vercel.json`: daily cron schedule, Python runtime, root config.
 7. Update `tech-trends-digest` skill: read Fetch Payload via Drive MCP, branch on success/failure, add the SMTP email-send step, keep git-commit gated to success only.
 
 ### Phase 3 — Testing
 
-8. Local unit test of `api/fetch.py` against the existing fetch/pre-filter test suite.
+8. Local unit test of `api/index.py` against the existing fetch/pre-filter test suite.
 9. Vercel preview deploy — manually hit the function URL once, confirm it writes to Drive and calls the trigger.
 10. Manually POST a synthetic failure payload to the API trigger, confirm the routine emails a failure notice and skips the git commit.
 11. Let one real end-to-end run happen on schedule; confirm the digest, the commit, and the email all show up.

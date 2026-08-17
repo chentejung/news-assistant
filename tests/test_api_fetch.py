@@ -1,4 +1,4 @@
-from api.fetch import run
+from api.index import run
 from news_assistant.fetch import RawItem
 
 

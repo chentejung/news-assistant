@@ -17,7 +17,10 @@ Produces one day's Digest for the Tech Trend Assistant. See `CONTEXT.md` at the 
 
 2. **Read the incoming trigger payload.** The API trigger that started this run carries `{"status": "success"}` or `{"status": "failure", "error": "..."}`.
 
-   - **On failure:** skip straight to step 8 and send a failure-notice email (subject like `Tech Trends Digest: fetch failed for <YYYY-MM-DD>`, body containing the `error` text). Do not write or commit anything — a failed fetch has no candidates, so nothing fits the Digest definition. Stop after sending.
+   - **On failure:** send the failure-notice email and stop — do not write or commit anything, since a failed fetch has no candidates and nothing fits the Digest definition:
+     ```
+     echo "<the error text>" | .venv/bin/python -m news_assistant.notify_cli --subject "Tech Trends Digest: fetch failed for <YYYY-MM-DD>"
+     ```
    - **On success:** continue to step 3.
 
 3. **Read the Fetch Payload.** Using the Google Drive MCP connector, read the single well-known Fetch Payload file Vercel just wrote. It's a JSON list of candidate Trend Items, each already keyword-pre-filtered against the fixed Topic list and tagged with every Topic its keywords matched (`candidate_topics`). This is broad-recall pre-filtering, not the final classification — some candidates will list more than one Topic, and some keyword matches will be wrong (e.g. a title matching "startup" as in "faster startup" rather than a business startup).
@@ -35,9 +38,13 @@ Produces one day's Digest for the Tech Trend Assistant. See `CONTEXT.md` at the 
 
    Save the file to `digests/<YYYY-MM-DD>.md` (create the `digests/` directory if it doesn't exist) and commit it to git with a message like `Add digest for <YYYY-MM-DD>`.
 
-8. **Email.** Send the email via `news_assistant.notify.send_email` (SMTP + Gmail App Password, per ADR-0005):
-   - On success: subject like `Tech Trends Digest: <YYYY-MM-DD>`, body is the full rendered Digest content from step 7.
-   - On failure: the failure-notice email described in step 2.
+8. **Email the rendered Digest** (SMTP + Gmail App Password, per ADR-0005):
+   ```
+   cat digests/<YYYY-MM-DD>.md | .venv/bin/python -m news_assistant.notify_cli --subject "Tech Trends Digest: <YYYY-MM-DD>"
+   ```
+   (The failure case's email is sent directly from step 2 and never reaches this step.)
+
+Both email steps require `SMTP_USERNAME`, `SMTP_APP_PASSWORD`, and `DIGEST_TO` set in the routine's environment (`SMTP_HOST`/`SMTP_PORT` default to `smtp.gmail.com`/`587`).
 
 ## Out of scope for this skill
 
